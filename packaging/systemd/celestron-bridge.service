@@ -1,0 +1,18 @@
+[Unit]
+Description=Celestron Telescope Wi-Fi Control Bridge
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=mklopfer
+WorkingDirectory=/home/mklopfer/celestron-telescope-network-control
+ExecStart=/home/mklopfer/celestron-telescope-network-control/tools/run_pi_bridge.sh
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=5
+KillMode=control-group
+SendSIGKILL=yes
+
+[Install]
+WantedBy=multi-user.target

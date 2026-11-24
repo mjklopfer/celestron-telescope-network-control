@@ -1,0 +1,19 @@
+[Unit]
+Description=Celestron Telescope Wi-Fi Control Bridge
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=%h/celestron-telescope-network-control
+ExecStart=%h/celestron-telescope-network-control/tools/run_pi_bridge.sh
+Restart=always
+RestartSec=3
+TimeoutStopSec=5
+KillMode=control-group
+SendSIGKILL=yes
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target

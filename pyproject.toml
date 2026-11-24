@@ -20,6 +20,7 @@ Issues = "https://github.com/mjklopfer/celestron-telescope-network-control/issue
 dev = ["ruff>=0.9,<1", "build>=1.2,<2"]
 bundle = ["pyinstaller>=6,<7"]
 mcp = ["mcp>=1.9,<2"]
+vision-dashboard = ["fastapi>=0.115,<1", "uvicorn>=0.30,<1", "websockets>=13,<16"]
 
 [project.scripts]
 cosmos90gt = "skyqlink_setup:main"

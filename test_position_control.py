@@ -15,6 +15,26 @@ class PositionTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 target_packet(axis, count)
 
+    def test_dispatch_rate_defaults_and_warning(self):
+        default = PositionController('192.0.2.230')
+        self.assertEqual(default.dispatch_rate_hz, 4)
+        self.assertEqual(default.cycle_interval, .25)
+        self.assertIsNone(default.rate_warning)
+        status = default.status()
+        self.assertEqual(status['cycle_overruns'], 0)
+        self.assertEqual(status['configured_cycle_interval_ms'], 250)
+        faster = PositionController('192.0.2.230', dispatch_rate_hz=8)
+        self.assertEqual(faster.cycle_interval, .125)
+        self.assertIn('unverified', faster.rate_warning)
+        stress = PositionController('192.0.2.230', dispatch_rate_hz=20)
+        self.assertIn('STRESS TEST', stress.rate_warning)
+        stress.set_dispatch_rate(4)
+        self.assertIsNone(stress.rate_warning)
+        self.assertEqual(stress.cycle_interval, .25)
+        for rate in (0, 20.1, float('nan')):
+            with self.assertRaises(ValueError):
+                PositionController('192.0.2.230', dispatch_rate_hz=rate)
+
     def test_worker_gates_motion_and_uses_latest_target(self):
         adapter = Adapter()
         original = adapter.sendall
@@ -42,6 +62,16 @@ class PositionTests(unittest.TestCase):
                 while not any(frame[4] == 2 for _, frame in adapter.sent) and time.monotonic() < deadline:
                     time.sleep(.01)
                 self.assertTrue(any(frame[4] == 2 for _, frame in adapter.sent))
+                controller.slew_rate(0x10, 1, 1)
+                deadline = time.monotonic() + 2
+                while (not any(frame[3] == 0x10 and frame[4] == 0x24 and frame[5] == 1
+                               for _, frame in adapter.sent)
+                       and time.monotonic() < deadline):
+                    time.sleep(.01)
+                self.assertTrue(any(frame[3] == 0x10 and frame[4] == 0x24 and frame[5] == 1
+                                    for _, frame in adapter.sent))
+                controller.freeze()
+                self.assertTrue(controller.armed)
                 with self.assertRaises(ValueError):
                     controller.submit(10, 0, 3, time.time())
                 with self.assertRaises(ValueError):
@@ -52,6 +82,16 @@ class PositionTests(unittest.TestCase):
                 controller.stop()
                 controller.thread.join(3)
         self.assertFalse(controller.thread.is_alive())
+
+    def test_freeze_stops_target_but_preserves_armed_link(self):
+        controller = PositionController('192.0.2.230')
+        controller.armed = True
+        controller.target = {'test': True}
+        controller.freeze()
+        self.assertTrue(controller.armed)
+        self.assertIsNone(controller.target)
+        self.assertTrue(controller.pause_event.is_set())
+        self.assertEqual(controller.history[-1]['event'], 'motion_frozen')
 
     def test_stream_rejects_stale_overrate_and_stops_on_fault(self):
         tracker = TrackingStream()

@@ -1,7 +1,32 @@
 # Development roadmap
 
-Updated 2026-11-18. Priority: stable cross-platform control, including modest
+Updated 2026-11-23. Priority: stable cross-platform control, including modest
 Raspberry Pi systems, before additional interfaces or unattended tracking.
+
+## Immediate vision-stack follow-up from the 2026-11-23 live session
+
+Implemented but still requiring the next supervised hardware session:
+
+1. Validate native Celestron calibration slew levels 1–9 end to end. Level 1 is
+   the default. Confirm encoder-based Stop, slow return, edge-target inward
+   selection, overshoot return/reduced retry, and both-axis mapping without
+   losing the selected optical feature.
+2. Tune the feature-appearance correlation threshold using Moon craters,
+   branches, aircraft lights and recorded dropouts. Target loss must freeze
+   motion while preserving the armed motor link; it must never promote a blank
+   or severely clipped ROI to LOCKED.
+3. Exercise camera-offline recovery without replacing the web process. The
+   dashboard must keep Live Mode, bridge status, encoder feedback and Recover
+   Camera available when CSI initialization fails.
+4. Verify the installed single-instance systemd services after a cold boot:
+   bridge first, dashboard second, one CSI owner only, automatic failure restart,
+   and forced cleanup after the graceful-stop timeout.
+5. Add compact manual nudge controls to support optical reacquisition while the
+   tracker is armed/frozen. Show raw encoder counts, angles, deltas, freshness and
+   commanded-versus-measured error in Live Mode.
+6. Finish responsive Live Mode layout cleanup and split the vision dashboard and
+   ESP32 firmware into their planned repositories only after the live interfaces
+   stabilize. Current work remains integrated for development.
 
 ## Current release scope
 
@@ -63,6 +88,25 @@ MCP supervises; a deterministic local producer handles frequent targets.
 Keep the latest target, reject stale input, cap telemetry refresh, and measure
 real hardware rates/latency before increasing update rates. Predictive velocity,
 arrival deadlines, Orbitron/WispDDE, TLE and launch CSV producers remain planned.
+
+Evaluate camera-assisted acquisition separately from mount control. The candidate
+pipeline is custom YOLO11n/NCNN detection plus ByteTrack association, with a faster
+centroid/optical-flow/MOSSE/KCF-style or Kalman-assisted tracker between detector
+frames. Compare this hybrid against the existing bright-target centroid probe on
+recorded and live CSI/UVC/future ASI120 input. Measure real capture and inference
+latency, dropped frames, target loss/reacquisition, CPU/RAM/thermal load and
+32-bit armv7 deployment constraints. Stock YOLO classes are not a rocket/satellite
+detector. No vision output may bypass stale-data, encoder, travel-envelope or Stop
+guards. The hardware target loop now exposes a 1–20 Hz experimental setting with
+a conservative 4 Hz default; rates above 4 Hz remain unverified, 15–20 Hz are
+stress-test requests, and none of those faster settings are
+described as a high-speed tracking implementation. Detailed evaluation items are in
+[TRACKING-DESIGN.md](TRACKING-DESIGN.md#vision-tracking-candidates-to-evaluate).
+
+Evaluate a direct USB-to-AUX transport as a separate low-jitter backend. It may
+remove Wi-Fi/bridge delay and reconnect behavior, but it must retain single-owner
+leases, serialized AUX request/reply handling, Stop priority and the proven AUX
+electrical/arbitration circuit. A generic USB-UART cable is not AUX-compliant.
 
 Follow the [backend architecture plan](ARCHITECTURE-PLAN.md) for future ESP32/
 ESP8266 AUX and modern Celestron Wi-Fi support. Keep transport, motion service,
@@ -272,3 +316,26 @@ Shared SVG/PNG/ICO/ICNS assets and the Linux installer are published. Complete
 Windows and macOS shortcut/app-launcher recipes and native appearance checks
 remain pending. Reuse the current icon and Celestron Telescope Network Control
 name; keep this work separate from the already addressed macOS GUI rendering.
+# Vision calibration and backlash follow-up
+
+- Keep measured camera-to-mount mapping mandatory for motor output. Do not
+  restore manual Normal/Reversed guesses; show the measured axis directions as
+  read-only diagnostics and provide an explicit relearn action.
+- Validate a coarse-to-fine camera/mount calibration sequence using 1.0°, 0.5°,
+  0.1°, and smaller probes as the mount permits.
+- Use encoder and pixel response in both approach directions to estimate axis
+  backlash and the minimum useful correction. Do not publish an automatic
+  backlash value until the result repeats across multiple runs.
+- Investigate why the original 0.01° and 0.1° probes failed to reach the former
+  0.004° acceptance window. The 0.004° criterion was replaced by a realistic,
+  step-scaled tolerance, but physical repeatability is still unverified.
+- Reformat and simplify the Live Mode panel for responsive widths. No control,
+  status text, selector, or button group should extend beyond the right edge of
+  its panel at the normal desktop, Raspberry Pi, or narrow-browser layouts.
+- Add a consolidated Live Mode motor readout showing, for both axes, raw encoder
+  counts, raw motor angle, local-reference angle, commanded delta, remaining
+  encoder error, sample age, and whether each value is live or stale.
+- Add compact manual nudge controls to Live Mode for small azimuth/elevation
+  corrections while setting up or reacquiring a target. Include selectable
+  step size, immediate Stop, encoder readback, and clear arbitration with the
+  optical tracking output so nudge and closed-loop tracking cannot fight.

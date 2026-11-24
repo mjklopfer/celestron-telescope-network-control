@@ -374,7 +374,9 @@ def control_capabilities() -> dict:
         'timed_jogs': {'implemented': True, 'seconds_range': [0.1, 2], 'speeds': [1, 9]},
         'telemetry': {'encoder_positions': True, 'age_seconds': True, 'connection_state': True},
         'latest_position_targets': {'implemented_experimentally': True, 'device_verified': False,
-                                    'default_enabled': False, 'max_dispatch_hz': 4,
+                                    'default_enabled': False, 'default_dispatch_hz': 4,
+                                    'configurable_dispatch_hz_range': [1, 20],
+                                    'rates_above_4_hz_unverified': True,
                                     'rate_guaranteed': False, 'max_relative_envelope_deg': 5},
         'stream_ingress': {'transport': 'authenticated loopback HTTP', 'simulation': True,
                            'hardware_requires_commissioning_override': True},
@@ -387,11 +389,14 @@ def control_capabilities() -> dict:
 
 @mcp.tool()
 def position_control_start(envelope_degrees: float = 5, confirm_experimental: bool = False,
-                           allow_unverified_hardware: bool = False) -> dict:
+                           allow_unverified_hardware: bool = False,
+                           dispatch_rate_hz: float = 4) -> dict:
     """Connect experimental native encoder-target worker. No motion until reference + explicit arm.
 
     Confirm clear travel within the supplied envelope BOTH ways on BOTH axes.
     This build caps the envelope at 5 degrees; it is not a validated ISS/launch tracker.
+    The conservative default is 4 Hz. Rates above 4 Hz are experimental; rates
+    above 10 Hz are stress-test requests that may be physically unsustainable.
     """
     if not confirm_experimental:
         raise ValueError('Explicit experimental-control authorization required')
@@ -405,9 +410,13 @@ def position_control_start(envelope_degrees: float = 5, confirm_experimental: bo
         raise RuntimeError('Native target control is not verified on this device. Use simulation; supervised commissioning requires explicit allow_unverified_hardware.')
     with service.lock:
         service.idle()
-        service.position_controller = PositionController(service.host, service.port, envelope_degrees)
+        service.position_controller = PositionController(
+            service.host, service.port, envelope_degrees,
+            dispatch_rate_hz=dispatch_rate_hz)
         service.position_controller.start()
-    return {'status': 'connecting', 'next': 'Poll position_control_status; set reference; arm explicitly.'}
+    return {'status': 'connecting', 'dispatch_rate_hz': dispatch_rate_hz,
+            'rate_warning': service.position_controller.rate_warning,
+            'next': 'Poll position_control_status; set reference; arm explicitly.'}
 
 
 @mcp.tool()
@@ -438,7 +447,9 @@ def position_control_arm(confirm_movement: bool = False) -> dict:
 def position_target(azimuth_deg: float, elevation_deg: float, sequence: int, utc: float) -> dict:
     """Replace latest desired position. When armed this MOVES hardware. Unix UTC and sequence must be current.
 
-    MCP calls are accepted rapidly but native targets are emitted at most 4 Hz.
+    MCP calls are accepted rapidly but native targets use the rate configured when
+    position control starts. The default is 4 Hz; faster rates are unverified,
+    and requests above 10 Hz are stress tests rather than a throughput promise.
     For sustained high-rate ingestion use the authenticated loopback stream.
     """
     if not service.position_controller:

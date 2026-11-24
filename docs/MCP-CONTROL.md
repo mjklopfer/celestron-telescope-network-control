@@ -67,16 +67,21 @@ commissioning succeeds, `allow_unverified_hardware=true`. This override is for
 supervised commissioning, not routine use. The default remains blocked on the
 current device. Travel is limited to at most 5 degrees from the initial encoder
 position, and reference plus explicit arming are required before motion.
-The input stream may update quickly, but hardware targets dispatch at most 4 Hz
-and can be slower. No variable-velocity or arrive-by-time promise is implemented.
+The input stream may update quickly, but the hardware loop uses the
+`dispatch_rate_hz` selected in `position_control_start`. Its conservative default
+is 4 Hz. The accepted range is 1–20 Hz; values above 4 Hz are explicitly
+experimental and unverified, and 15–20 Hz are stress-test requests rather than
+throughput promises. Actual serialized exchanges can be slower.
+No variable-velocity or arrive-by-time promise is implemented.
 See [tracking design](TRACKING-DESIGN.md) for stale-input, recovery and validation.
 
 ## Verified versus pending
 
 The stdio tool-list/readback path and production timed pulses have been exercised.
 Offline tests cover guards, packet construction, simulated stream rejection and
-worker behavior. Native-target commissioning failed during initial feedback
-acquisition: no target was sent and no 5-degree sweep occurred. Actual encoder/
+worker behavior. A later supervised synthetic hardware-loop test obtained fresh
+feedback, sent bounded native targets through the Pi bridge, observed both axes
+and verified Stop/disarm with stationary encoder samples. Actual encoder/
 backlash writes and WiFly clock synchronization remain unverified on this telescope.
 An AI should report these limits to its operator rather than infer support from
 a tool name or a successful TCP connection.

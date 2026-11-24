@@ -1,0 +1,18 @@
+[Unit]
+Description=Telescope Visual Tracking Dashboard
+Wants=network-online.target celestron-bridge.service
+After=network-online.target celestron-bridge.service
+
+[Service]
+Type=simple
+User=mklopfer
+WorkingDirectory=/home/mklopfer/vision-tracking
+ExecStart=/home/mklopfer/celestron-telescope-network-control/tools/run_pi_vision_dashboard.sh
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=5
+KillMode=control-group
+SendSIGKILL=yes
+
+[Install]
+WantedBy=multi-user.target

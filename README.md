@@ -10,6 +10,7 @@ modern Celestron control applications communicate with legacy SkyQLink hardware.
 
 [User guide](docs/USER-GUIDE.md) · [Runtime options](docs/RUNTIME-OPTIONS.md) ·
 [Raspberry Pi desktop setup](docs/RASPBERRY-PI-DESKTOP.md) ·
+[Pi vision and hardware-loop test](docs/PI-VISION-STACK.md) ·
 [Desktop icons and shortcut support](docs/DESKTOP-ICONS-AND-SHORTCUTS.md) ·
 [Version 1.1 changes](docs/RELEASE-1.1.md) · [Validation](docs/VALIDATION.md)
 
@@ -245,6 +246,11 @@ and [HomeBrew research](docs/HOMEBREW-INTERFACES.md).
 
 Optional [MCP automation](docs/MCP-CONTROL.md) and [tracking design](docs/TRACKING-DESIGN.md)
 are separate capabilities; a general GUI-control HTTP API is not implemented.
+The optional Pi vision dashboard includes live camera click-to-lock tracking,
+a Control Bridge health panel with one-click motor-link reconnect and managed
+Bridge service restart,
+a display-only tracker, and an explicitly
+armed, bounded synthetic hardware-loop commissioning mode; see its dedicated guide.
 
 
 

@@ -151,6 +151,19 @@ No Celestron certification or complete official AUX conformance specification
 has been established. Describe the result as tested interoperability with named
 mount/client versions, not universal or certified compliance.
 
+### Direct USB-to-AUX variant
+
+A USB-to-AUX adapter is a useful alternative transport for a Raspberry Pi or
+desktop tracking controller. It can remove Wi-Fi and TCP/bridge jitter, but USB
+does not make a generic USB-UART cable electrically or logically compatible with
+AUX. Reuse the reviewed tri-state transmitter, protected 3.3 V receive path,
+BUSY/arbitration handling, checksum/framing and safe boot-state requirements in
+the ESP32 design. The host backend must keep one request/reply in flight, preserve
+endpoint ownership and give Stop priority. Treat 19200 framing and bus timing as
+pending measurement items. Validate read-only traffic with a logic analyzer before
+supervised movement. Benchmark its sustainable loop rate separately from Wi-Fi;
+do not assume that removing TCP makes the motor controllers accept arbitrary rates.
+
 
 ## Capability-driven discovery and Motor control selection
 
