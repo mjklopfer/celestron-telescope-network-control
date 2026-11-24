@@ -27,6 +27,14 @@ and Gpredict are installed separately. The system reported NTP synchronized with
 the clock in UTC internally and the display timezone set to America/Los_Angeles.
 No GPS/PPS receiver is installed or verified.
 
+The driver-advertised OV5647 camera controls captured from
+`Picamera2(0).camera_controls` are preserved in
+[`hardware/camera-profiles/ov5647-libcamera-controls.json`](../hardware/camera-profiles/ov5647-libcamera-controls.json).
+That manifest records all returned ranges and defaults, the capture environment,
+an observed automatic-exposure state and the generic dashboard limits that did
+not match the hardware. Enumerate controls again for a different sensor, driver,
+camera mode or operating-system image; do not assume this profile is universal.
+
 The camera-only probe is at `tools/vision_tracker_probe.py` in this repository and
 was copied to `/home/mklopfer/vision-tracking/tools`. It never commands motors.
 A 640x480 USB-camera bright-centroid run processed 96 frames in 5.012 seconds
