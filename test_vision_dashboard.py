@@ -9,10 +9,11 @@ try:
                                         create_feature_tracker,
                                         hil_marker_from_status, hil_target_from_pixel,
                                         learn_pixel_mount_transform,
-                                        learned_mount_delta, wrapped_encoder_delta)
+                                        learned_mount_delta, normalize_camera_controls,
+                                        wrapped_encoder_delta)
     VISION_DEPS_AVAILABLE = True
 except ImportError:
-    cv2 = np = BrightObjectTracker = VisionDashboardEngine = create_feature_tracker = hil_marker_from_status = hil_target_from_pixel = None
+    cv2 = np = BrightObjectTracker = VisionDashboardEngine = create_feature_tracker = hil_marker_from_status = hil_target_from_pixel = normalize_camera_controls = None
     VISION_DEPS_AVAILABLE = False
 
 
@@ -124,6 +125,23 @@ class VisionDashboardTests(unittest.TestCase):
         self.assertTrue(engine.synthetic_blink['enabled'])
         with self.assertRaises(ValueError):
             engine.set_synthetic_blink(True, 1, 2, 1, 4)
+
+    def test_camera_controls_are_normalized_and_enforced(self):
+        controls = normalize_camera_controls({
+            'ExposureValue': (-8.0, 8.0, 0.0),
+            'ExposureTime': (1, 66666, 20000),
+            'AnalogueGain': (1.0, 16.0, 1.0),
+            'ScalerCrop': ((0, 0, 0, 0), (10, 20, 30, 40), None),
+        })
+        self.assertEqual(controls['ExposureTime']['maximum'], 66666)
+        self.assertEqual(controls['ScalerCrop']['maximum'], [10, 20, 30, 40])
+        engine = VisionDashboardEngine(source='synthetic')
+        engine.camera_control_ranges = controls
+        engine.set_camera_exposure(False, 8, 66666, 16)
+        self.assertEqual(engine.camera_manual_exposure_us, 66666)
+        self.assertEqual(engine.camera_manual_gain, 16)
+        with self.assertRaisesRegex(ValueError, 'gain 1–16'):
+            engine.set_camera_exposure(False, 0, 10000, 16.1)
 
     def test_bridge_service_restart_reconnects_motor_link(self):
         engine = VisionDashboardEngine(source='synthetic', hil_host='127.0.0.1')

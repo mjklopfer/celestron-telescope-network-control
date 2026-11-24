@@ -104,6 +104,36 @@ def create_feature_tracker(name, lock_size=False):
     return factory()
 
 
+def _json_camera_control_value(value):
+    """Convert libcamera scalar, tuple and rectangle values to JSON-safe data."""
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, (tuple, list)):
+        return [_json_camera_control_value(item) for item in value]
+    if all(hasattr(value, field) for field in ('x', 'y', 'width', 'height')):
+        return [int(value.x), int(value.y), int(value.width), int(value.height)]
+    enum_value = getattr(value, 'value', None)
+    if isinstance(enum_value, (bool, int, float, str)):
+        return enum_value
+    return str(value)
+
+
+def normalize_camera_controls(controls):
+    """Return driver-advertised minimum, maximum and default camera controls."""
+    normalized = {}
+    for name, information in (controls or {}).items():
+        try:
+            minimum, maximum, default = tuple(information)
+        except (TypeError, ValueError):
+            continue
+        normalized[str(name)] = {
+            'minimum': _json_camera_control_value(minimum),
+            'maximum': _json_camera_control_value(maximum),
+            'default': _json_camera_control_value(default),
+        }
+    return normalized
+
+
 def hil_target_from_pixel(x, y, width, height, envelope_degrees):
     """Map a synthetic screen point into a bounded local azimuth/elevation target."""
     scale = float(envelope_degrees) * .9
@@ -372,6 +402,7 @@ class VisionDashboardEngine:
         self.camera_recovery_requested = False
         self.camera_recovery_count = 0
         self.camera_metadata = {}
+        self.camera_control_ranges = {}
         self.camera_auto_exposure = True
         self.camera_exposure_value = 0.0
         self.camera_manual_exposure_us = 10000
@@ -709,15 +740,22 @@ class VisionDashboardEngine:
             from picamera2 import Picamera2
             index = int(str(self.device).split(':', 1)[1])
             capture = Picamera2(index)
+            self.camera_control_ranges = normalize_camera_controls(
+                capture.camera_controls)
             configuration = capture.create_video_configuration(
                 main={'size': (self.width, self.height), 'format': 'RGB888'},
                 controls={'FrameRate': self.requested_fps})
             capture.configure(configuration)
-            capture.set_controls({'AeEnable': self.camera_auto_exposure,
-                                  'AwbEnable': True,
-                                  'ExposureValue': self.camera_exposure_value})
+            controls = {'AeEnable': self.camera_auto_exposure,
+                        'AwbEnable': True,
+                        'ExposureValue': self.camera_exposure_value}
+            if not self.camera_auto_exposure:
+                controls.update(ExposureTime=self.camera_manual_exposure_us,
+                                AnalogueGain=self.camera_manual_gain)
+            capture.set_controls(controls)
             capture.start()
             return capture
+        self.camera_control_ranges = {}
         device = int(self.device) if str(self.device).isdigit() else self.device
         capture = cv2.VideoCapture(device)
         capture.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
@@ -1525,9 +1563,21 @@ class VisionDashboardEngine:
         exposure_value = float(exposure_value)
         exposure_time_us = int(exposure_time_us)
         analogue_gain = float(analogue_gain)
-        if (not -4 <= exposure_value <= 4 or not 100 <= exposure_time_us <= 1000000
-                or not 1 <= analogue_gain <= 32):
-            raise ValueError('Exposure compensation -4 to +4; manual exposure 100–1000000 us; gain 1–32')
+        def limits(name, fallback):
+            detected = self.camera_control_ranges.get(name, {})
+            return (float(detected.get('minimum', fallback[0])),
+                    float(detected.get('maximum', fallback[1])))
+
+        ev_limits = limits('ExposureValue', (-4, 4))
+        exposure_limits = limits('ExposureTime', (100, 1000000))
+        gain_limits = limits('AnalogueGain', (1, 32))
+        if (not ev_limits[0] <= exposure_value <= ev_limits[1]
+                or not exposure_limits[0] <= exposure_time_us <= exposure_limits[1]
+                or not gain_limits[0] <= analogue_gain <= gain_limits[1]):
+            raise ValueError(
+                f'Exposure compensation {ev_limits[0]:g} to {ev_limits[1]:g}; '
+                f'manual exposure {exposure_limits[0]:g}–{exposure_limits[1]:g} us; '
+                f'gain {gain_limits[0]:g}–{gain_limits[1]:g}')
         self.camera_auto_exposure = automatic
         self.camera_exposure_value = exposure_value
         self.camera_manual_exposure_us = exposure_time_us
@@ -2162,6 +2212,11 @@ class VisionDashboardEngine:
                         'exposure_time_us': self.camera_metadata.get('ExposureTime'),
                         'analogue_gain': self.camera_metadata.get('AnalogueGain'),
                         'digital_gain': self.camera_metadata.get('DigitalGain'),
+                        'limits': {
+                            name: dict(self.camera_control_ranges[name])
+                            for name in ('ExposureValue', 'ExposureTime', 'AnalogueGain')
+                            if name in self.camera_control_ranges
+                        },
                     },
                     'image_curve': {'black': self.curve_black,
                                     'white': self.curve_white,
@@ -2354,6 +2409,11 @@ def create_app(engine, static_directory=None):
     @app.get('/api/status')
     async def status():
         return engine.snapshot()
+
+    @app.get('/api/camera-controls')
+    async def camera_controls():
+        return {'camera_device': engine.device,
+                'controls': dict(engine.camera_control_ranges)}
 
     @app.websocket('/ws')
     async def websocket(websocket: WebSocket):

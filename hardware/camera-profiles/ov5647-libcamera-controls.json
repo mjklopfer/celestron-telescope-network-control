@@ -71,6 +71,6 @@
     "ExposureValue": {"minimum": -4.0, "maximum": 4.0},
     "ExposureTime": {"minimum": 100, "maximum": 1000000, "unit": "microseconds"},
     "AnalogueGain": {"minimum": 1.0, "maximum": 32.0},
-    "status": "Generic hard-coded dashboard limits; these do not match the detected OV5647 hardware and should be replaced by runtime enumeration."
+    "status": "Historical generic limits captured before correction. Runtime camera-control enumeration replaced these limits on 2026-11-23; this block is retained to document the resolved mismatch."
   }
 }

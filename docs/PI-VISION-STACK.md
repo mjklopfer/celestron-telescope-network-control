@@ -34,6 +34,12 @@ That manifest records all returned ranges and defaults, the capture environment,
 an observed automatic-exposure state and the generic dashboard limits that did
 not match the hardware. Enumerate controls again for a different sensor, driver,
 camera mode or operating-system image; do not assume this profile is universal.
+The dashboard now enumerates the selected Picamera2 device when it opens, applies
+the detected exposure-compensation, exposure-time and analogue-gain limits to the
+controls and server-side validation, and restores the selected manual values after
+a camera reopen. The complete detected manifest is available read-only at
+`/api/camera-controls`. USB/V4L2 devices without Picamera2 control enumeration use
+the documented conservative fallback limits.
 
 The camera-only probe is at `tools/vision_tracker_probe.py` in this repository and
 was copied to `/home/mklopfer/vision-tracking/tools`. It never commands motors.
