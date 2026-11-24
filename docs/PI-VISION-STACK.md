@@ -185,6 +185,26 @@ Camera rotation, mirroring and axis direction are measured by the bounded
 **Learn / validate motor mapping** routine rather than guessed with manual
 Normal/Reversed selectors.
 
+The mapping movement selector is a **maximum**, not the first movement. Each
+axis now starts at no more than 0.05 degrees and increases only when the measured
+feature displacement is under 3 pixels, never beyond the selected maximum. An
+edge feature is probed toward frame center. A detected overshoot returns to the
+starting encoder position and retries with a smaller movement. Normal optical
+corrections also ramp from roughly 0.024 degrees per command during initial
+acquisition and remain capped at 0.15 degrees per command. These software limits
+address the large initial jump seen in early tests, but physical repeatability
+still requires another supervised telescope session.
+
+Feature ROI tracking retains the original clicked image patch. Three consecutive
+non-credible CSRT results release the drifting tracker and change the state to
+**REACQUIRING**. Motor corrections freeze; the program does not scan the mount or
+promote arbitrary new points. It searches the camera frame for a unique match to
+the original patch and recreates CSRT only after two spatially consistent frames.
+This preserves a sensitive normal lock while preventing aimless hunting after the
+object leaves the field. A returned original feature can therefore reestablish
+tracking automatically. Similar-looking repeated texture can remain ambiguous,
+so use a distinctive ROI and watch the reported state.
+
 Live Mode draws a compact fixed-size green lock box but deliberately omits the
 long green target-to-aim error vector used by Demo Mode; that vector became an
 oversized stripe on a responsive browser display. **Reset live view** requires
@@ -220,7 +240,8 @@ Verified on 2026-11-22 on the Pi: the UVC camera produced live 640x480 frames,
 the bridge management identity reported Ready, cached replies for both axes were
 fresh, and a supervised dashboard-client reconnect returned to a live connection
 with zero motor output. This does not yet verify physical optical closed-loop
-tracking; click-lock and direction safety are software/OpenCV tested only.
+tracking; click-lock, lost-feature latching, two-frame reacquisition and direction
+safety are software/OpenCV tested only.
 
 The bright-contour IDs are temporary nearest-neighbor associations, not semantic
 identities. Crossing objects, occlusion or large inter-frame movement can exchange

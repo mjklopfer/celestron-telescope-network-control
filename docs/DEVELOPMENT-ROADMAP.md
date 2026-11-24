@@ -8,13 +8,16 @@ Raspberry Pi systems, before additional interfaces or unattended tracking.
 Implemented but still requiring the next supervised hardware session:
 
 1. Validate native Celestron calibration slew levels 1–9 end to end. Level 1 is
-   the default. Confirm encoder-based Stop, slow return, edge-target inward
-   selection, overshoot return/reduced retry, and both-axis mapping without
-   losing the selected optical feature.
-2. Tune the feature-appearance correlation threshold using Moon craters,
-   branches, aircraft lights and recorded dropouts. Target loss must freeze
-   motion while preserving the armed motor link; it must never promote a blank
-   or severely clipped ROI to LOCKED.
+   the default. The software probe now begins at 0.05 degrees or less and treats
+   the selected step as a maximum. Confirm encoder-based Stop, slow return,
+   edge-target inward selection, overshoot return/reduced retry, and both-axis
+   mapping without losing the selected optical feature.
+2. Tune the feature-appearance correlation and unique-match thresholds using
+   Moon craters, branches, aircraft lights and recorded dropouts. Implemented:
+   three failed credibility checks retire the drifting CSRT tracker, freeze
+   motor correction while retaining the armed link, and require two consistent
+   matches to the original patch before automatic reacquisition. Physical
+   dropout/reentry behavior remains to be verified.
 3. Exercise camera-offline recovery without replacing the web process. The
    dashboard must keep Live Mode, bridge status, encoder feedback and Recover
    Camera available when CSI initialization fails.
@@ -321,8 +324,9 @@ name; keep this work separate from the already addressed macOS GUI rendering.
 - Keep measured camera-to-mount mapping mandatory for motor output. Do not
   restore manual Normal/Reversed guesses; show the measured axis directions as
   read-only diagnostics and provide an explicit relearn action.
-- Validate a coarse-to-fine camera/mount calibration sequence using 1.0°, 0.5°,
-  0.1°, and smaller probes as the mount permits.
+- Validate the implemented adaptive camera/mount calibration sequence. It starts
+  at 0.05° or less and escalates only for a sub-3-pixel response up to the user
+  selected maximum; verify 1.0°, 0.5°, 0.1° and smaller maxima physically.
 - Use encoder and pixel response in both approach directions to estimate axis
   backlash and the minimum useful correction. Do not publish an automatic
   backlash value until the result repeats across multiple runs.

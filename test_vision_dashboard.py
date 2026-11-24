@@ -175,6 +175,43 @@ class VisionDashboardTests(unittest.TestCase):
         self.assertGreater(engine._feature_similarity(image, (20, 20, 20, 20)), .95)
         self.assertEqual(engine._feature_similarity(image, (50, 50, 20, 20)), 0.0)
 
+    def test_feature_credibility_rejects_correlation_loss_and_teleport(self):
+        engine = VisionDashboardEngine(source='synthetic', ui_mode='live')
+        engine.feature_similarity_baseline = .90
+        engine.feature_last_confirmed = (30, 30, 10.0)
+        self.assertFalse(engine._feature_candidate_is_credible(
+            (22, 22, 16, 16), .20, now=10.1))
+        self.assertFalse(engine._feature_candidate_is_credible(
+            (250, 150, 16, 16), .95, now=10.1))
+        self.assertTrue(engine._feature_candidate_is_credible(
+            (26, 24, 16, 16), .80, now=10.1))
+
+    def test_lost_feature_requires_two_consistent_matches_before_reacquiring(self):
+        engine = VisionDashboardEngine(source='synthetic', ui_mode='live')
+        reference = np.zeros((18, 22), dtype=np.uint8)
+        cv2.line(reference, (2, 2), (19, 15), 240, 2)
+        cv2.circle(reference, (6, 13), 3, 160, -1)
+        frame = np.full((120, 180), 18, dtype=np.uint8)
+        frame[62:80, 103:125] = reference
+        feature_frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
+        engine.feature_reference_patch = reference.copy()
+        engine.feature_selected_id = 1
+        engine.feature_reacquiring = True
+        tracker = MagicMock()
+        tracker.init.return_value = True
+        with patch('tools.vision_dashboard.create_feature_tracker',
+                   return_value=tracker):
+            self.assertIsNone(engine._attempt_feature_reacquisition(
+                frame, feature_frame))
+            detection = engine._attempt_feature_reacquisition(
+                frame, feature_frame)
+        self.assertIsNotNone(detection)
+        self.assertAlmostEqual(detection['x'], 114, delta=1)
+        self.assertAlmostEqual(detection['y'], 71, delta=1)
+        self.assertFalse(engine.feature_reacquiring)
+        self.assertIs(engine.feature_tracker, tracker)
+        self.assertEqual(tracker.init.call_count, 1)
+
     def test_live_mode_click_lock_and_hold_anchor(self):
         engine = VisionDashboardEngine(source='synthetic', ui_mode='demo')
         engine.telemetry.update(width=640, height=480)

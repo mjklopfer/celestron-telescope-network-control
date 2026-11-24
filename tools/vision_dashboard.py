@@ -389,6 +389,12 @@ class VisionDashboardEngine:
         self.feature_initial_size = None
         self.feature_reference_patch = None
         self.feature_similarity_threshold = .22
+        self.feature_similarity_baseline = 1.0
+        self.feature_invalid_frames = 0
+        self.feature_reacquiring = False
+        self.feature_reacquire_candidate = None
+        self.feature_reacquire_confirmations = 0
+        self.feature_last_confirmed = None
         self.feature_tracker = None
         self.feature_roi_pending = None
         self.feature_selected_id = None
@@ -1004,6 +1010,16 @@ class VisionDashboardEngine:
                                     fade_in_seconds=fade_in,
                                     period_seconds=period)
 
+    def _reset_feature_guard(self, clear_reference=False):
+        self.feature_similarity_baseline = 1.0
+        self.feature_invalid_frames = 0
+        self.feature_reacquiring = False
+        self.feature_reacquire_candidate = None
+        self.feature_reacquire_confirmations = 0
+        self.feature_last_confirmed = None
+        if clear_reference:
+            self.feature_reference_patch = None
+
     def set_tracking_mode(self, mode, algorithm='CSRT', lock_size=True):
         if self.hil_enabled:
             raise ValueError('Turn motor output OFF before changing tracking mode')
@@ -1018,7 +1034,7 @@ class VisionDashboardEngine:
         self.feature_roi_pending = None
         self.feature_selected_id = None
         self.feature_initial_size = None
-        self.feature_reference_patch = None
+        self._reset_feature_guard(clear_reference=True)
         self.tracker.clear_selection()
 
     def set_operating_mode(self, mode):
@@ -1035,6 +1051,7 @@ class VisionDashboardEngine:
         self.feature_roi_pending = None
         self.feature_selected_id = None
         self.feature_initial_size = None
+        self._reset_feature_guard(clear_reference=True)
         self.tracker.clear_selection()
         self.tracking_mode = 'feature-roi' if mode == 'live' else 'threshold'
         self.hil_previous_target = None
@@ -1109,6 +1126,7 @@ class VisionDashboardEngine:
             self.feature_selected_id = None
             self.last_selected = None
             self.feature_samples.clear()
+            self._reset_feature_guard(clear_reference=False)
 
     def _return_to_probe_start(self, baseline, baseline_px):
         """Return to exact starting encoders and reacquire only the same ROI."""
@@ -1192,7 +1210,12 @@ class VisionDashboardEngine:
                      baseline_px[1] > frame_height * .78)
         minimum_step = .005
         attempts = []
-        step = float(requested_step)
+        maximum_step = float(requested_step)
+        # Treat the selected value as a maximum.  Begin with a much smaller
+        # motion so a narrow-field feature is not thrown out of frame before
+        # the pixel direction is known, then escalate only when the measured
+        # pixel response is too small.
+        step = min(.05, maximum_step)
         direction = 1
         for attempt_number in range(8):
             try:
@@ -1229,6 +1252,8 @@ class VisionDashboardEngine:
                     step = max(minimum_step, step / 2)
                 elif outward:
                     direction *= -1
+                elif pixel_motion < 3 and step < maximum_step:
+                    step = min(maximum_step, step * 2)
                 else:
                     step = max(minimum_step, step / 2)
                     direction *= -1
@@ -1236,7 +1261,7 @@ class VisionDashboardEngine:
                 attempts.append({'direction': direction, 'step_degrees': step,
                                  'result': 'lost-or-failed', 'message': str(error)})
                 self._return_to_probe_start_rate(baseline, baseline_px, slew_rate)
-                step = max(minimum_step, step / 2)
+                step = max(minimum_step, step / 2) if not near_edge else step
                 direction *= -1
             self.orientation_calibration.update(
                 message=(f'{"Azimuth" if axis == 0 else "Elevation"} probe '
@@ -1418,7 +1443,7 @@ class VisionDashboardEngine:
         self.feature_roi_pending = None
         self.feature_selected_id = None
         self.feature_initial_size = None
-        self.feature_reference_patch = None
+        self._reset_feature_guard(clear_reference=True)
         self.last_selected = None
         self.hil_previous_target = None
         self.hil_last_visible_target = None
@@ -1488,6 +1513,7 @@ class VisionDashboardEngine:
         self.feature_tracker = None
         self.feature_roi_pending = None
         self.feature_selected_id = None
+        self._reset_feature_guard(clear_reference=True)
         self._invalidate_orientation('Camera or resolution changed; soft start must be relearned.')
         self._load_orientation_profile()
 
@@ -1615,7 +1641,7 @@ class VisionDashboardEngine:
         self.feature_initial_size = self.feature_roi_pending[2:]
         self.feature_tracker = None
         self.feature_selected_id = None
-        self.feature_reference_patch = None
+        self._reset_feature_guard(clear_reference=True)
 
     @staticmethod
     def _feature_detection(bbox, confidence=1.0):
@@ -1648,6 +1674,95 @@ class VisionDashboardEngine:
             return 0.0
         return float(cv2.matchTemplate(
             candidate, reference, cv2.TM_CCOEFF_NORMED)[0, 0])
+
+    def _feature_candidate_is_credible(self, bbox, similarity, now=None):
+        """Reject tracker drift without making the normal lock less sensitive."""
+        if similarity is None or not math.isfinite(similarity):
+            return False
+        threshold = max(self.feature_similarity_threshold,
+                        min(.55, self.feature_similarity_baseline * .45))
+        if similarity < threshold:
+            return False
+        x, y, width, height = (float(value) for value in bbox)
+        center = (x + width / 2, y + height / 2)
+        now = time.monotonic() if now is None else float(now)
+        if self.feature_last_confirmed:
+            previous_x, previous_y, previous_time = self.feature_last_confirmed
+            jump = math.hypot(center[0] - previous_x, center[1] - previous_y)
+            diagonal = max(8.0, math.hypot(width, height))
+            predicted = 0.0
+            if len(self.feature_samples) >= 2:
+                first, last = self.feature_samples[-2], self.feature_samples[-1]
+                dt = max(.001, last[0] - first[0])
+                velocity = math.hypot(last[1] - first[1], last[2] - first[2]) / dt
+                predicted = velocity * max(.001, now - previous_time)
+            if jump > max(diagonal * 3.0, diagonal + predicted * 3.0):
+                return False
+        self.feature_similarity_baseline = (
+            .95 * self.feature_similarity_baseline + .05 * similarity)
+        self.feature_last_confirmed = (center[0], center[1], now)
+        return True
+
+    def _feature_reacquisition_match(self, gray):
+        """Find the original ROI in the full frame only when the match is unique."""
+        reference = self.feature_reference_patch
+        if reference is None or float(np.std(reference)) < 4:
+            return None
+        frame_height, frame_width = gray.shape[:2]
+        ref_height, ref_width = reference.shape[:2]
+        if ref_width > frame_width or ref_height > frame_height:
+            return None
+        scores = cv2.matchTemplate(gray, reference, cv2.TM_CCOEFF_NORMED)
+        _, best, _, location = cv2.minMaxLoc(scores)
+        threshold = max(.60, min(.82, self.feature_similarity_baseline * .70))
+        if not math.isfinite(best) or best < threshold:
+            return None
+        remaining = scores.copy()
+        radius_x, radius_y = max(2, ref_width // 2), max(2, ref_height // 2)
+        left, top = max(0, location[0] - radius_x), max(0, location[1] - radius_y)
+        right = min(remaining.shape[1], location[0] + radius_x + 1)
+        bottom = min(remaining.shape[0], location[1] + radius_y + 1)
+        remaining[top:bottom, left:right] = -1
+        second = float(np.max(remaining)) if remaining.size else -1.0
+        if best < .85 and best - second < .05:
+            return None
+        return ((float(location[0]), float(location[1]),
+                 float(ref_width), float(ref_height)), float(best))
+
+    def _attempt_feature_reacquisition(self, gray, feature_frame):
+        """Require two consistent full-frame matches before resuming motion."""
+        match = self._feature_reacquisition_match(gray)
+        if not match:
+            self.feature_reacquire_candidate = None
+            self.feature_reacquire_confirmations = 0
+            return None
+        bbox, score = match
+        x, y, width, height = bbox
+        center = (x + width / 2, y + height / 2)
+        previous = self.feature_reacquire_candidate
+        consistent = bool(previous and math.hypot(
+            center[0] - previous[0], center[1] - previous[1])
+            <= max(8.0, math.hypot(width, height)))
+        self.feature_reacquire_candidate = center
+        self.feature_reacquire_confirmations = (
+            self.feature_reacquire_confirmations + 1 if consistent else 1)
+        if self.feature_reacquire_confirmations < 2:
+            return None
+        tracker = create_feature_tracker(self.feature_algorithm,
+                                         self.feature_lock_size)
+        initialized = tracker.init(feature_frame, bbox)
+        if initialized is False:
+            self.feature_reacquire_confirmations = 0
+            return None
+        self.feature_tracker = tracker
+        self.feature_initial_size = (round(width), round(height))
+        self.feature_invalid_frames = 0
+        self.feature_reacquiring = False
+        self.feature_reacquire_candidate = None
+        self.feature_reacquire_confirmations = 0
+        self.feature_similarity_baseline = max(.60, score)
+        self.feature_last_confirmed = (center[0], center[1], time.monotonic())
+        return self._feature_detection(bbox, score)
 
     def _hil_update(self, selected, width, height):
         if not self.hil_controller:
@@ -1942,6 +2057,10 @@ class VisionDashboardEngine:
                                 raise RuntimeError('OpenCV could not initialize that feature ROI')
                             self.feature_selected_id = 1
                             self.feature_reference_patch = self._extract_feature_patch(gray, roi)
+                            self._reset_feature_guard(clear_reference=False)
+                            self.feature_last_confirmed = (
+                                roi[0] + roi[2] / 2, roi[1] + roi[3] / 2,
+                                time.monotonic())
                             objects = [self._feature_detection(roi)]
                         elif self.feature_tracker:
                             found, bbox = self.feature_tracker.update(feature_frame)
@@ -1957,10 +2076,25 @@ class VisionDashboardEngine:
                                         box_y + box_height / 2 - locked_height / 2,
                                         locked_width, locked_height)
                             similarity = self._feature_similarity(gray, bbox) if found else None
-                            objects = ([self._feature_detection(bbox, similarity)]
-                                       if (found and similarity is not None and
-                                           similarity >= self.feature_similarity_threshold)
-                                       else [])
+                            if (found and self._feature_candidate_is_credible(
+                                    bbox, similarity)):
+                                self.feature_invalid_frames = 0
+                                self.feature_reacquiring = False
+                                objects = [self._feature_detection(bbox, similarity)]
+                            else:
+                                objects = []
+                                self.feature_invalid_frames += 1
+                                if self.feature_invalid_frames >= 3:
+                                    self.feature_tracker = None
+                                    self.feature_reacquiring = True
+                                    self.feature_reacquire_candidate = None
+                                    self.feature_reacquire_confirmations = 0
+                        elif (self.feature_reference_patch is not None
+                              and self.feature_selected_id is not None):
+                            self.feature_reacquiring = True
+                            reacquired = self._attempt_feature_reacquisition(
+                                gray, feature_frame)
+                            objects = [reacquired] if reacquired else []
                         else:
                             objects = []
                         selected_id = self.feature_selected_id
@@ -1979,6 +2113,8 @@ class VisionDashboardEngine:
                     elif (self.tracking_mode == 'threshold'
                           and self.tracker.selected_id in self.tracker.tracks):
                         state = 'COASTING'
+                    elif self.feature_reacquiring:
+                        state = 'REACQUIRING'
                     else:
                         state = 'LOST'
                     anchor_x = self.aim_point[0] * width
@@ -2003,6 +2139,9 @@ class VisionDashboardEngine:
                     'hardware_loop': hil,
                     'objects': objects, 'selected_track_id': selected_id,
                     'tracking_mode': self.tracking_mode,
+                    'feature_reacquiring': self.feature_reacquiring,
+                    'feature_invalid_frames': self.feature_invalid_frames,
+                    'feature_similarity_baseline': self.feature_similarity_baseline,
                     'ui_mode': self.ui_mode,
                     'aim_mode': self.aim_mode,
                     'aim_point': {'x': self.aim_point[0], 'y': self.aim_point[1]},
