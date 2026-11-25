@@ -1,7 +1,13 @@
-# Raspberry Pi vision-tracking evaluation stack
+# Raspberry Pi vision-tracking evaluation stack — archived companion copy
+
+The actively maintained dashboard, service files and current operating guide now
+live in [`mjklopfer/telescope-optical-tracking-control`](https://github.com/mjklopfer/telescope-optical-tracking-control).
+This document is retained as the historical extraction baseline and may not
+describe the newest dashboard behavior. Use the standalone repository for
+installation, startup and camera-recovery instructions.
 
 This is an evaluation environment, not a validated autonomous telescope tracker.
-It does not start at boot. Display-only mode never owns the telescope endpoint.
+Display-only mode never owns the telescope endpoint.
 Live Mode and the explicitly selected synthetic Demo Mode can own one bridge
 client connection and command bounded physical movement only after output is armed.
 

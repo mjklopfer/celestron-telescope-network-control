@@ -159,6 +159,20 @@ Use **Control Bridge** for the SkyQLink bridge or **Diagnostics** for modern-mod
 polling settings. Direct SkyQLink motor connections have their own settings under
 Motor control. Keep-alive does **not** override the user-idle release timer.
 
+On the managed Raspberry Pi service, startup waits for a stable routed source
+address before binding, enables the configured five-second Bridge heartbeat, and
+uses a ten-second restart delay. If the active route changes while discovery is
+running, the Bridge exits so systemd can restart it on the correct interface.
+Use the application's own **Discover SkyQLink / Celestron Modules** operation as
+the authoritative module search; it performs protocol checks and identifies the
+device rather than merely finding an open TCP port.
+
+Reverified 2026-11-25 after reboot: application discovery found the physical
+SkyQLink/WiFly RN-171 at `192.168.1.231:2000` (WiFly `2.40-CEL`, both motor
+controllers `5.24`). After Bridge restart, the management endpoint was Ready,
+both encoder streams were fresh, and polling held approximately 3.998 Hz with
+zero observed overruns. No physical movement was requested in that check.
+
 ## Application tabs
 
 - **Motor control:** bounded jogs, Stop, raw encoder readbacks, optional keyboard

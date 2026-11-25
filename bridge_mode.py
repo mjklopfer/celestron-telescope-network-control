@@ -544,6 +544,13 @@ class Bridge:
         server.listen(2)
         return server
 
+    def route_still_matches_listener(self):
+        """Return whether the telescope route still uses the bound LAN address."""
+        try:
+            return route_source_address(self.host, self.port) == self.bind_host
+        except OSError:
+            return False
+
     def run(self):
         """Own the upstream socket, relay one client, advertise discovery and clean up Stop replies."""
         try:
@@ -597,6 +604,10 @@ class Bridge:
                         self.udp.sendto(packet, ('255.255.255.255', 55555))
                     except OSError as error:
                         self.emit('bridge_status', message=f'Discovery broadcast failed: {error}')
+                        if not self.route_still_matches_listener():
+                            raise ConnectionError(
+                                f'Local Bridge address {self.bind_host} is no longer the '
+                                'telescope route address; restart on the current LAN address')
                     next_advert = now + 1
                 sockets = self.listeners + [self.upstream]
                 sockets += [s for s in (self.client, self.manager) if s]

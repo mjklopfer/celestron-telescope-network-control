@@ -15,5 +15,5 @@ exec "$VISION_DIR/.venv/bin/python" "$VISION_DIR/tools/vision_dashboard.py" \
     --width 640 --height 480 --fps 20 \
     --hil-host "$LOCAL_IP" --hil-port 2000 \
     --hil-envelope-degrees 0 --hil-display-span-degrees 5 \
-    --hil-dispatch-rate-hz 1 --host 0.0.0.0 --allow-lan --port 8000 \
+    --hil-dispatch-rate-hz 4 --host 0.0.0.0 --allow-lan --port 8000 \
     --log-directory "$VISION_DIR/logs/live-optical"

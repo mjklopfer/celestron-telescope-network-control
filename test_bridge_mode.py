@@ -448,6 +448,13 @@ class BridgeConfigurationTests(unittest.TestCase):
         self.assertIn('ERR', bridge.management_reply('save'))
         self.assertIn('ERR', bridge.management_reply('reset'))
 
+    def test_route_change_is_detected_for_service_restart(self):
+        bridge = Bridge('192.0.2.231', bind_host='127.0.0.1')
+        with patch('bridge_mode.route_source_address', return_value='192.168.1.149'):
+            self.assertFalse(bridge.route_still_matches_listener())
+        with patch('bridge_mode.route_source_address', return_value='127.0.0.1'):
+            self.assertTrue(bridge.route_still_matches_listener())
+
 
 class BackgroundReadTests(unittest.TestCase):
     def setUp(self):
